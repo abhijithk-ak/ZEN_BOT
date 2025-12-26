@@ -34,18 +34,34 @@ void setup() {
     gfx = &display;
     delay(10);
 
+    // ---- FACE ----
     face = new Face(SCREEN_WIDTH, SCREEN_HEIGHT, EYE_SIZE);
-    face->EyeInterDistance = 10;       // Subtle spacing between eyes
-    face->RandomBlink = true;         // Enable organic blinking
-    face->RandomLook = true;          // Enable eye movement
-    face->RandomBehavior = true;      // Enable idle behaviors
+    face->EyeInterDistance = 10;
+    face->RandomBlink = true;
+    face->RandomLook = true;
+    face->RandomBehavior = true;
 
-    Serial.println("ZEN booted — Face engine online");
+    // ---- RE-ENABLE PHASE 2 MODULES ----
+    moodLight.begin(4);     // WS2812 on GPIO 4
+    sound.begin(25);        // PAM8403/DAC on GPIO 25
+    motors.begin();         // DRV8833 pins already defined internally
+    emotionManager.begin(); // Initialize emotion state
+
+    emotionManager.trigger(eEmotions::Happy, 1.0f);
+
+    Serial.println("ZEN booted — Phase 2.4 online");
 }
 
 void loop() {
     if (face) {
         face->Update();
     }
-    delay(16);  // ~60 FPS
+
+    emotionManager.update();              // Update emotion state
+
+    moodLight.update(emotionManager);     // Apply emotions to mood light
+    motors.update(emotionManager);        // Apply emotions to motors
+    sound.update(emotionManager);         // Apply emotions to sound
+
+    delay(16);
 }
