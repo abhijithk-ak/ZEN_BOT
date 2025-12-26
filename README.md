@@ -204,7 +204,7 @@ GitHub: [@abhijithk-ak](https://github.com/abhijithk-ak)
 - [ESP32 Documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/)
 - [Arduino IDE](https://www.arduino.cc/en/software)
 - [Adafruit Libraries](https://github.com/adafruit)
-- [esp32-eyes Library](https://github.com/luisllamasalbors/esp32-eyes)
+- [esp32-eyes Library](https://github.com/playfultechnology/esp32-eyes) - Face animation and eye rendering engine
 
 ---
 
