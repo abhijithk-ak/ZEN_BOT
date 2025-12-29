@@ -3,6 +3,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Face.h>
 #include "ZEN_EmotionManager.h"
+#include "ZEN_EyeEmotionEngine.h"
 #include "ZEN_MoodLight.h"
 #include "ZEN_MotorController.h"
 #include "ZEN_SoundEngine.h"
@@ -18,6 +19,7 @@ extern Adafruit_GFX* gfx;
 Face* face = nullptr;
 
 ZEN_EmotionManager emotionManager;
+ZEN_EyeEmotionEngine eyeEngine;
 ZEN_MoodLight moodLight;
 ZEN_MotorController motors;
 ZEN_SoundEngine sound;
@@ -41,6 +43,9 @@ void setup() {
     face->RandomLook = true;
     face->RandomBehavior = true;
 
+    // ---- EYE EMOTION ENGINE ----
+    eyeEngine.begin(face);
+
     // ---- RE-ENABLE PHASE 2 MODULES ----
     moodLight.begin(4);     // WS2812 on GPIO 4
     sound.begin(25);        // PAM8403/DAC on GPIO 25
@@ -53,11 +58,24 @@ void setup() {
 }
 
 void loop() {
-    if (face) {
-        face->Update();
-    }
-
     emotionManager.update();              // Update emotion state
+    // 🧪 TEST CODE: Cycle through all emotions every 3 seconds
+    static unsigned long lastTest = 0;
+    static int emoIndex = 0;
+
+    if (millis() - lastTest > 3000) {
+        lastTest = millis();
+        emotionManager.trigger((eEmotions)emoIndex, 1.0f);
+        Serial.printf("Testing emotion: %d\n", emoIndex);
+        emoIndex++;
+        if (emoIndex >= EMOTIONS_COUNT) emoIndex = 0;
+    }
+    // End test code
+    eyeEngine.update(emotionManager);     // Apply emotions to eyes (expressions & behavior)
+
+    if (face) {
+        face->Update();                   // Render face with updated expressions
+    }
 
     moodLight.update(emotionManager);     // Apply emotions to mood light
     motors.update(emotionManager);        // Apply emotions to motors
