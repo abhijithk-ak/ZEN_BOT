@@ -1,47 +1,94 @@
 #include "ZEN_SoundEngine.h"
-#include <driver/dac.h>
 
-#define SOUND_COOLDOWN 2500  // ms
-#define VOLUME 50          // 0–255 (keep LOW for safety)
-
-void ZEN_SoundEngine::begin(uint8_t dacPin) {
-    _dacPin = dacPin;
-    dac_output_enable((dac_channel_t)(dacPin == 25 ? DAC_CHANNEL_1 : DAC_CHANNEL_2));
-    Serial.println("[SOUND] Engine ready");
+void ZEN_SoundEngine::begin(uint8_t pin) {
+    _pin = pin;
+    pinMode(_pin, OUTPUT);
+    noTone(_pin);
 }
 
 void ZEN_SoundEngine::update(const ZEN_EmotionManager& emotions) {
-    unsigned long now = millis();
-    if (now - _lastSound < SOUND_COOLDOWN) return;
+    eEmotions current = emotions.current();
+    if (current != _lastEmotion) {
 
-    eEmotions emo = emotions.current();
-    emotionSound(emo);
-    _lastSound = now;
+        switch (current) {
+
+            // POSITIVE
+            case eEmotions::Happy:
+            case eEmotions::Glee:
+            case eEmotions::Awe:
+                startPattern(SP_POSITIVE);
+                break;
+
+            // ALERT
+            case eEmotions::Surprised:
+            case eEmotions::Scared:
+                startPattern(SP_ALERT);
+                break;
+
+            // NEGATIVE
+            case eEmotions::Angry:
+            case eEmotions::Furious:
+            case eEmotions::Frustrated:
+            case eEmotions::Annoyed:
+                startPattern(SP_NEGATIVE);
+                break;
+
+            // LOW
+            case eEmotions::Sad:
+            case eEmotions::Worried:
+            case eEmotions::Unimpressed:
+            case eEmotions::Sleepy:
+                startPattern(SP_LOW);
+                break;
+
+            // SUBTLE / NONE
+            default:
+                startPattern(SP_SUBTLE);
+                break;
+        }
+
+        _lastEmotion = current;
+    }
+
+    runPattern();
 }
 
-void ZEN_SoundEngine::emotionSound(eEmotions emo) {
-    switch (emo) {
-        case eEmotions::Happy:
-        case eEmotions::Glee:
-            playTone(880, 80);
-            playTone(1200, 60);
+void ZEN_SoundEngine::startPattern(SoundPattern p) {
+    stop();
+    _active = p;
+    _startMs = millis();
+}
+
+void ZEN_SoundEngine::runPattern() {
+    unsigned long elapsed = millis() - _startMs;
+
+    switch (_active) {
+
+        case SP_POSITIVE:
+            if (elapsed < 80) tone(_pin, 1200);
+            else if (elapsed < 120) noTone(_pin);
+            else if (elapsed < 200) tone(_pin, 1200);
+            else stop();
             break;
 
-        case eEmotions::Sleepy:
-            playTone(220, 150);
+        case SP_ALERT:
+            if (elapsed < 70) tone(_pin, 1500);
+            else stop();
             break;
 
-        case eEmotions::Annoyed:
-        case eEmotions::Frustrated:
-            playTone(180, 120);
+        case SP_NEGATIVE:
+            if (elapsed < 100) tone(_pin, 400);
+            else stop();
             break;
 
-        case eEmotions::Surprised:
-            playTone(1400, 50);
+        case SP_LOW:
+            if (elapsed < 180) tone(_pin, 250);
+            else stop();
             break;
 
-        case eEmotions::Focused:
-            playTone(600, 60);
+        case SP_SUBTLE:
+            if (elapsed < 40) tone(_pin, 800);
+            else stop();
             break;
 
         default:
@@ -49,14 +96,7 @@ void ZEN_SoundEngine::emotionSound(eEmotions emo) {
     }
 }
 
-void ZEN_SoundEngine::playTone(float freq, uint16_t ms) {
-    const uint32_t period = 1000000 / freq;
-    uint32_t cycles = (ms * 1000) / period;
-
-    for (uint32_t i = 0; i < cycles; i++) {
-        dac_output_voltage((dac_channel_t)(_dacPin == 25 ? DAC_CHANNEL_1 : DAC_CHANNEL_2), VOLUME);
-        delayMicroseconds(period / 2);
-        dac_output_voltage((dac_channel_t)(_dacPin == 25 ? DAC_CHANNEL_1 : DAC_CHANNEL_2), 0);
-        delayMicroseconds(period / 2);
-    }
+void ZEN_SoundEngine::stop() {
+    noTone(_pin);
+    _active = SP_NONE;
 }
