@@ -9,6 +9,13 @@ void ZEN_SoundEngine::begin(uint8_t pin) {
 
 void ZEN_SoundEngine::update(const ZEN_EmotionManager& emotions) {
     eEmotions current = emotions.current();
+    bool sleeping = emotions.isSleeping();
+
+    // SILENCE in sleep mode
+    if (sleeping) {
+        silence();
+        return;
+    }
 
     if (current != _lastEmotion) {
         _lastEmotion = current;
@@ -68,9 +75,7 @@ void ZEN_SoundEngine::runPattern() {
     switch (_active) {
 
         case SP_POSITIVE:
-            if (t < 60) tone(_pin, 1200);
-            else if (t < 100) noTone(_pin);
-            else if (t < 160) tone(_pin, 1400);
+            if (t < 30) tone(_pin, 1200);      // Shorter, softer beep
             else silence();
             break;
 

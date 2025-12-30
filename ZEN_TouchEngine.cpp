@@ -6,6 +6,8 @@
 
 // Gesture timings (milliseconds)
 #define TAP_DURATION_MAX       300   // Tap must be < 300ms
+#define PETTING_MIN_TIME       2000  // Petting mode: 2-5 seconds
+#define PETTING_MAX_TIME       5000
 #define MULTITAP_WINDOW        2000  // 3+ taps within 2 seconds = strong emotion
 #define LONG_PRESS_TIME        10000 // >= 10 seconds = sleep
 
@@ -132,7 +134,7 @@ void ZEN_TouchEngine::update(ZEN_EmotionManager& emotions) {
         return;
     }
 
-    // HOLD: Still touching (check for long press timeout)
+    // HOLD: Still touching (check for petting and long press)
     if (level > 0 && _touchState == TOUCH_PRESSED) {
         unsigned long held = now - _touchStartMs;
         
@@ -141,7 +143,16 @@ void ZEN_TouchEngine::update(ZEN_EmotionManager& emotions) {
             return;
         }
         
-        // Long press threshold for sleep
+        // Petting mode: 2-5 seconds of gentle holding
+        if (held >= PETTING_MIN_TIME && held < PETTING_MAX_TIME && _sleepState == AWAKE) {
+            emotions.trigger(eEmotions::Awe, 0.9f);
+            _emotionLockUntilMs = now + 5000;  // Lock for 5s
+            Serial.println("[ZEN] PETTING → Awe");
+            _touchState = TOUCH_IDLE;
+            return;
+        }
+        
+        // Long press threshold for sleep (>= 10 seconds)
         if (held >= LONG_PRESS_TIME && _sleepState == AWAKE) {
             _touchState = TOUCH_RELEASED;
             processLongPress(emotions);
@@ -149,7 +160,7 @@ void ZEN_TouchEngine::update(ZEN_EmotionManager& emotions) {
             return;
         }
         
-        return;  // Still holding, wait for release
+        return;  // Still holding, wait for next event
     }
 
     // RELEASE: Touching → not touching (process gesture)
