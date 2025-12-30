@@ -1,233 +1,76 @@
 #include "ZEN_TouchEngine.h"
 
-// Touch thresholds (capacitive values)
-#define TOUCH_THRESHOLD  45      // Touch detected if < this
-#define HARD_THRESHOLD   15      // Hard press if < this
+#define TOUCH_THRESHOLD 45
+#define TAP_WINDOW 800
 
-// Gesture timings (milliseconds)
-#define TAP_DURATION_MAX       300   // Tap must be < 300ms
-#define PETTING_MIN_TIME       2000  // Petting mode: 2-5 seconds
-#define PETTING_MAX_TIME       5000
-#define MULTITAP_WINDOW        2000  // 3+ taps within 2 seconds = strong emotion
-#define LONG_PRESS_TIME        10000 // >= 10 seconds = sleep
+static const eEmotions cycleEmotions[] = {
+    eEmotions::Normal,
+    eEmotions::Glee,
+    eEmotions::Happy,
+    eEmotions::Awe,
+    eEmotions::Surprised,
+    eEmotions::Focused,
+    eEmotions::Sleepy,
+    eEmotions::Sad,
+    eEmotions::Worried,
+    eEmotions::Skeptic,
+    eEmotions::Unimpressed,
+    eEmotions::Suspicious,
+    eEmotions::Squint,
+    eEmotions::Scared
+};
 
-// Lifecycle timings (testing durations)
-#define AUTO_SLEEP_INACTIVITY  60000 // Sleep after 60s no interaction
-#define AUTO_WAKE_DURATION     60000 // Auto-wake after 60s asleep
-#define EMOTION_LOCK_TIME      10000 // Lock emotions for 10s after multi-tap
-
-// Sleep constraints
-#define MIN_SLEEP_DURATION     10000 // Must sleep at least 10 seconds
+static const eEmotions angryEmotions[] = {
+    eEmotions::Annoyed,
+    eEmotions::Angry,
+    eEmotions::Frustrated,
+    eEmotions::Furious
+};
 
 void ZEN_TouchEngine::begin(uint8_t pin) {
     _pin = pin;
-    _lastInteractionMs = millis();
-    _touchState = TOUCH_IDLE;
-    _sleepState = AWAKE;
-    Serial.println("[TOUCH] Lifecycle engine ready");
-}
-
-int ZEN_TouchEngine::readLevel(int raw) {
-    if (raw <= HARD_THRESHOLD) return 2;      // Hard press
-    if (raw <= TOUCH_THRESHOLD) return 1;      // Light touch
-    return 0;                                  // Not touching
-}
-
-void ZEN_TouchEngine::enterSleep(ZEN_EmotionManager& emotions) {
-    if (_sleepState == ASLEEP) return;  // Already asleep
-    
-    _sleepState = ASLEEP;
-    _sleepEnteredMs = millis();
-    emotions.trigger(eEmotions::Sleepy, 1.0f);
-    Serial.println("[ZEN] → SLEEP");
-}
-
-void ZEN_TouchEngine::exitSleep(ZEN_EmotionManager& emotions) {
-    if (_sleepState == AWAKE) return;  // Already awake
-    
-    _sleepState = AWAKE;
-    _lastInteractionMs = millis();
-    emotions.trigger(eEmotions::Normal, 0.8f);
-    _tapCount = 0;  // Reset tap counter on wake
-    Serial.println("[ZEN] → AWAKE");
-}
-
-void ZEN_TouchEngine::processTap(ZEN_EmotionManager& emotions) {
-    static const eEmotions lightEmotions[] = {
-        eEmotions::Happy,
-        eEmotions::Glee,
-        eEmotions::Surprised,
-        eEmotions::Awe
-    };
-    static int lightIndex = 0;
-    
-    emotions.trigger(lightEmotions[lightIndex], 0.8f);
-    lightIndex = (lightIndex + 1) % 4;
-    
-    Serial.printf("[ZEN] TAP → %d\n", lightIndex);
-}
-
-void ZEN_TouchEngine::processLongPress(ZEN_EmotionManager& emotions) {
-    enterSleep(emotions);
-    Serial.println("[ZEN] LONG PRESS → Sleep");
-}
-
-void ZEN_TouchEngine::processMultiTap(ZEN_EmotionManager& emotions) {
-    static const eEmotions strongEmotions[] = {
-        eEmotions::Annoyed,
-        eEmotions::Angry,
-        eEmotions::Furious
-    };
-    static int strongIndex = 0;
-    
-    emotions.trigger(strongEmotions[strongIndex], 1.0f);
-    strongIndex = (strongIndex + 1) % 3;
-    
-    // LOCK emotion for 10 seconds
-    _emotionLockUntilMs = millis() + EMOTION_LOCK_TIME;
-    
-    Serial.printf("[ZEN] MULTI-TAP (lock 10s) → %d\n", strongIndex);
+    Serial.println("[TOUCH] Simple tap engine ready");
 }
 
 void ZEN_TouchEngine::update(ZEN_EmotionManager& emotions) {
-    unsigned long now = millis();
     int raw = touchRead(_pin);
-    int level = readLevel(raw);
+    bool pressed = raw < TOUCH_THRESHOLD;
+    unsigned long now = millis();
 
-    // ========================================
-    // 🔒 EMOTION LOCK CHECK
-    // ========================================
-    if (now < _emotionLockUntilMs) {
-        // Locked: ignore all touch input except for auto-timers
-        // Continue to lifecycle checks only
-    } else if (_emotionLockUntilMs > 0) {
-        // Lock just expired
-        _emotionLockUntilMs = 0;
-        Serial.println("[ZEN] Emotion lock released");
+    if (pressed && !_touching) {
+        _touching = true;
     }
 
-    // ========================================
-    // 😴 AUTO SLEEP (no interaction for 60s)
-    // ========================================
-    if (_sleepState == AWAKE && (now - _lastInteractionMs) > AUTO_SLEEP_INACTIVITY) {
-        enterSleep(emotions);
-        return;
-    }
+    if (!pressed && _touching) {
+        _touching = false;
 
-    // ========================================
-    // 😴 AUTO WAKE (asleep for 60s)
-    // ========================================
-    if (_sleepState == ASLEEP && (now - _sleepEnteredMs) > AUTO_WAKE_DURATION) {
-        exitSleep(emotions);
-        return;
-    }
-
-    // ========================================
-    // ✋ TOUCH STATE MACHINE
-    // ========================================
-
-    // PRESS: Not touching → touching
-    if (level > 0 && _touchState == TOUCH_IDLE) {
-        _touchState = TOUCH_PRESSED;
-        _touchStartMs = now;
-        Serial.printf("[ZEN] PRESS (raw=%d)\n", raw);
-        return;
-    }
-
-    // HOLD: Still touching (check for petting and long press)
-    if (level > 0 && _touchState == TOUCH_PRESSED) {
-        unsigned long held = now - _touchStartMs;
-        
-        // If emotion is locked, ignore
-        if (now < _emotionLockUntilMs) {
-            return;
-        }
-        
-        // Petting mode: 2-5 seconds of gentle holding
-        if (held >= PETTING_MIN_TIME && held < PETTING_MAX_TIME && _sleepState == AWAKE) {
-            emotions.trigger(eEmotions::Awe, 0.9f);
-            _emotionLockUntilMs = now + 5000;  // Lock for 5s
-            Serial.println("[ZEN] PETTING → Awe");
-            _touchState = TOUCH_IDLE;
-            return;
-        }
-        
-        // Long press threshold for sleep (>= 10 seconds)
-        if (held >= LONG_PRESS_TIME && _sleepState == AWAKE) {
-            _touchState = TOUCH_RELEASED;
-            processLongPress(emotions);
-            _touchState = TOUCH_IDLE;
-            return;
-        }
-        
-        return;  // Still holding, wait for next event
-    }
-
-    // RELEASE: Touching → not touching (process gesture)
-    if (level == 0 && _touchState == TOUCH_PRESSED) {
-        _touchState = TOUCH_RELEASED;
-        unsigned long held = now - _touchStartMs;
-
-        // ---- WAKE from sleep ----
-        if (_sleepState == ASLEEP && held < TAP_DURATION_MAX) {
-            unsigned long sleepDuration = now - _sleepEnteredMs;
-            if (sleepDuration >= MIN_SLEEP_DURATION) {
-                exitSleep(emotions);
-                Serial.println("[ZEN] Woken by tap");
-                _touchState = TOUCH_IDLE;
-                return;
-            }
-            // Too early to wake, ignore
-            _touchState = TOUCH_IDLE;
-            return;
+        if (now - _lastTapMs < TAP_WINDOW) {
+            _tapCount++;
+        } else {
+            _tapCount = 1;
         }
 
-        // ---- Process if awake ----
-        if (_sleepState == AWAKE) {
-            _lastInteractionMs = now;
+        _lastTapMs = now;
 
-            // If locked, ignore all input
-            if (now < _emotionLockUntilMs) {
-                Serial.println("[ZEN] Touch ignored (locked)");
-                _touchState = TOUCH_IDLE;
-                return;
-            }
-
-            // ---- TAP LOGIC ----
-            if (held < TAP_DURATION_MAX) {
-                // Check if this is part of multi-tap sequence
-                if ((now - _lastTapMs) < MULTITAP_WINDOW) {
-                    _tapCount++;
-                } else {
-                    _tapCount = 1;
-                }
-                _lastTapMs = now;
-
-                // Multi-tap: 3 or more taps
-                if (_tapCount >= 3) {
-                    processMultiTap(emotions);
-                    _tapCount = 0;
-                    _touchState = TOUCH_IDLE;
-                    return;
-                }
-
-                // Single/double tap (treat as single light emotion)
-                if (_tapCount == 1) {
-                    processTap(emotions);
-                    _touchState = TOUCH_IDLE;
-                    return;
-                }
-
-                _touchState = TOUCH_IDLE;
-                return;
-            }
-
-            // ---- LONG PRESS already handled above ----
+        if (_tapCount >= 3) {
+            tripleTap(emotions);
+            _tapCount = 0;
+        } else {
+            singleTap(emotions);
         }
-
-        _touchState = TOUCH_IDLE;
-        return;
     }
+}
 
-    // IDLE: Not touching, no state change needed
+void ZEN_TouchEngine::singleTap(ZEN_EmotionManager& emotions) {
+    static int index = 0;
+    emotions.trigger(cycleEmotions[index], 1.0f);
+    Serial.printf("[TOUCH] TAP → emotion %d\n", cycleEmotions[index]);
+    index = (index + 1) % (sizeof(cycleEmotions) / sizeof(eEmotions));
+}
+
+void ZEN_TouchEngine::tripleTap(ZEN_EmotionManager& emotions) {
+    static int index = 0;
+    emotions.trigger(angryEmotions[index], 1.0f);
+    Serial.printf("[TOUCH] TRIPLE TAP → emotion %d\n", angryEmotions[index]);
+    index = (index + 1) % (sizeof(angryEmotions) / sizeof(eEmotions));
 }

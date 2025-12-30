@@ -4,47 +4,10 @@ void ZEN_EyeEmotionEngine::begin(Face* face) {
     _face = face;
 }
 
-void ZEN_EyeEmotionEngine::drawSleepZZZ() {
-    if (!_face) return;
-
-    unsigned long now = millis();
-    int phase = (now - _sleepAnimMs) / 400;  // Cycle every 400ms
-
-    // Draw ZZZ that grows (small z to large z floating up)
-    // This is simple text animation on the OLED
-    extern Adafruit_GFX* gfx;
-    if (!gfx) return;
-
-    int z_size = 1 + (phase % 3);  // Sizes: 1, 2, 3
-    int y_pos = 45 - (phase % 3) * 5;  // Float upward
-
-    gfx->setTextSize(z_size);
-    gfx->setTextColor(SSD1306_WHITE);
-    gfx->setCursor(105, y_pos);
-    gfx->print("Z");
-}
-
 void ZEN_EyeEmotionEngine::update(const ZEN_EmotionManager& emotions) {
     if (!_face) return;
 
     eEmotions current = emotions.current();
-    bool sleeping = emotions.isSleeping();
-
-    // ---- SLEEP MODE: Disable blinking, show ZZZ ----
-    if (sleeping) {
-        if (current != eEmotions::Sleepy) {
-            _lastEmotion = eEmotions::Sleepy;
-            _face->Expression.GoTo_Sleepy();
-            _face->RandomBlink = false;   // No random blinking
-            _face->RandomLook = false;
-            _face->RandomBehavior = false;
-            _sleepAnimMs = millis();
-        }
-        drawSleepZZZ();
-        return;
-    }
-
-    // ---- AWAKE MODE: Normal emotion processing ----
     if (current == _lastEmotion) return;
 
     _lastEmotion = current;
@@ -108,6 +71,8 @@ void ZEN_EyeEmotionEngine::applyEmotion(eEmotions e) {
             break;
 
         case eEmotions::Sleepy:
+            _face->RandomBlink = false;
+            _face->RandomLook = false;
             _face->Expression.GoTo_Sleepy();
             break;
 

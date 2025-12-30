@@ -6,6 +6,7 @@ class ZEN_SoundEngine {
 public:
     void begin(uint8_t pin);
     void update(const ZEN_EmotionManager& emotions);
+    void setMuted(bool m);
 
 private:
     enum SoundPattern {
@@ -22,6 +23,7 @@ private:
     void silence();
 
     uint8_t _pin;
+    bool _muted = false;
     SoundPattern _active = SP_NONE;
     SoundPattern _pending = SP_NONE;
     unsigned long _startMs = 0;

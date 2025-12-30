@@ -10,7 +10,6 @@ public:
     void forceSleep(bool sleep);
 
     ZENEmotion current() const;
-    bool isSleeping() const { return _sleeping; }
 
 private:
     ZEN_EmotionBlender _blender;

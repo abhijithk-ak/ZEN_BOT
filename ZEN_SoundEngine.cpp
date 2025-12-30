@@ -7,15 +7,15 @@ void ZEN_SoundEngine::begin(uint8_t pin) {
     Serial.println("[SOUND] Phase 3.2 ready");
 }
 
-void ZEN_SoundEngine::update(const ZEN_EmotionManager& emotions) {
-    eEmotions current = emotions.current();
-    bool sleeping = emotions.isSleeping();
+void ZEN_SoundEngine::setMuted(bool m) {
+    _muted = m;
+    if (_muted) noTone(_pin);
+}
 
-    // SILENCE in sleep mode
-    if (sleeping) {
-        silence();
-        return;
-    }
+void ZEN_SoundEngine::update(const ZEN_EmotionManager& emotions) {
+    if (_muted) return;  // Don't play sounds while muted
+    
+    eEmotions current = emotions.current();
 
     if (current != _lastEmotion) {
         _lastEmotion = current;
@@ -75,7 +75,9 @@ void ZEN_SoundEngine::runPattern() {
     switch (_active) {
 
         case SP_POSITIVE:
-            if (t < 30) tone(_pin, 1200);      // Shorter, softer beep
+            if (t < 60) tone(_pin, 1200);
+            else if (t < 100) noTone(_pin);
+            else if (t < 160) tone(_pin, 1400);
             else silence();
             break;
 

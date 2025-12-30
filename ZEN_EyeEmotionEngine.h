@@ -9,9 +9,7 @@ public:
 
 private:
     void applyEmotion(eEmotions emotion);
-    void drawSleepZZZ();
 
     Face* _face = nullptr;
     eEmotions _lastEmotion = eEmotions::Normal;
-    unsigned long _sleepAnimMs = 0;
 };
