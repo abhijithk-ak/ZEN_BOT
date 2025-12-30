@@ -13,16 +13,17 @@ private:
         SP_POSITIVE,
         SP_ALERT,
         SP_NEGATIVE,
-        SP_LOW,
-        SP_SUBTLE
+        SP_COGNITIVE,
+        SP_SLEEP
     };
 
     void startPattern(SoundPattern p);
     void runPattern();
-    void stop();
+    void silence();
 
     uint8_t _pin;
     SoundPattern _active = SP_NONE;
+    SoundPattern _pending = SP_NONE;
     unsigned long _startMs = 0;
     eEmotions _lastEmotion = eEmotions::Normal;
 };
