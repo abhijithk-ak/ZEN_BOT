@@ -5,84 +5,157 @@
 #define BIN1 26
 #define BIN2 27
 
-#define PWM_MIN 40
-#define PWM_MAX 140
+#define PWM_FREQ 1000
+#define PWM_RES 8
+
+#define CH_A1 0
+#define CH_A2 1
+#define CH_B1 2
+#define CH_B2 3
 
 void ZEN_MotorController::begin() {
-    pinMode(AIN1, OUTPUT);
-    pinMode(AIN2, OUTPUT);
-    pinMode(BIN1, OUTPUT);
-    pinMode(BIN2, OUTPUT);
-    stop();
-    Serial.println("[MOTOR] Ready");
+    ledcSetup(CH_A1, PWM_FREQ, PWM_RES);
+    ledcSetup(CH_A2, PWM_FREQ, PWM_RES);
+    ledcSetup(CH_B1, PWM_FREQ, PWM_RES);
+    ledcSetup(CH_B2, PWM_FREQ, PWM_RES);
+
+    ledcAttachPin(AIN1, CH_A1);
+    ledcAttachPin(AIN2, CH_A2);
+    ledcAttachPin(BIN1, CH_B1);
+    ledcAttachPin(BIN2, CH_B2);
+
+    stopAll();
+    Serial.println("[MOTOR] Emotion engine ready");
 }
 
-void ZEN_MotorController::update(const ZEN_EmotionManager& emotions) {
-    eEmotions emo = emotions.current();
-    unsigned long now = millis();
+void ZEN_MotorController::update(const ZEN_EmotionManager& emotions,
+                                 const ZEN_ModeManager& mode) {
+    // Only in EMO mode
+    if (!mode.is(MODE_EMO)) {
+        stopAll();
+        _active = MP_NONE;
+        return;
+    }
 
-    if (now - _lastAction < 2000) return;
-    _lastAction = now;
+    eEmotions current = emotions.current();
 
-    switch (emo) {
-        case eEmotions::Happy:
-        case eEmotions::Glee:
-            behaviorHappy();
+    // Trigger ONLY on emotion change
+    if (current != _lastEmotion) {
+        _lastEmotion = current;
+
+        switch (current) {
+            case eEmotions::Happy:
+                startPattern(MP_FORWARD);
+                break;
+
+            case eEmotions::Glee:
+                startPattern(MP_DOUBLE);
+                break;
+
+            case eEmotions::Surprised:
+            case eEmotions::Focused:
+            case eEmotions::Skeptic:
+            case eEmotions::Suspicious:
+                startPattern(MP_TWITCH);
+                break;
+
+            case eEmotions::Angry:
+            case eEmotions::Furious:
+                startPattern(MP_JERK);
+                break;
+
+            case eEmotions::Sad:
+            case eEmotions::Worried:
+            case eEmotions::Unimpressed:
+                startPattern(MP_FORWARD);
+                break;
+
+            default:
+                // Normal, Sleepy, Awe, Scared → no motor
+                break;
+        }
+    }
+
+    runPattern();
+}
+
+void ZEN_MotorController::startPattern(MotorPattern p) {
+    _active = p;
+    _startMs = millis();
+}
+
+void ZEN_MotorController::runPattern() {
+    unsigned long t = millis() - _startMs;
+
+    switch (_active) {
+
+        case MP_FORWARD:
+            if (t < 80) drive(100, 100);
+            else stopAll();
+            if (t >= 120) _active = MP_NONE;
             break;
 
-        case eEmotions::Focused:
-            behaviorFocused();
+        case MP_DOUBLE:
+            if (t < 60) drive(100, 100);
+            else if (t < 120) stopAll();
+            else if (t < 180) drive(100, 100);
+            else { stopAll(); _active = MP_NONE; }
             break;
 
-        case eEmotions::Annoyed:
-        case eEmotions::Frustrated:
-            behaviorAnnoyed();
+        case MP_TWITCH:
+            if (t < 40) drive(80, -80);
+            else { stopAll(); _active = MP_NONE; }
             break;
 
-        case eEmotions::Sleepy:
-            behaviorSleepy();
+        case MP_JERK:
+            if (t < 70) drive(120, -120);
+            else { stopAll(); _active = MP_NONE; }
             break;
 
         default:
-            stop();
             break;
     }
 }
 
-void ZEN_MotorController::behaviorHappy() {
-    drive(PWM_MAX, PWM_MAX);
-    delay(80);
-    stop();
-}
-
-void ZEN_MotorController::behaviorFocused() {
-    drive(PWM_MIN + 20, PWM_MIN + 20);
-    delay(50);
-    stop();
-}
-
-void ZEN_MotorController::behaviorAnnoyed() {
-    drive(PWM_MAX, -PWM_MAX);
-    delay(60);
-    stop();
-}
-
-void ZEN_MotorController::behaviorSleepy() {
-    drive(PWM_MIN, -PWM_MIN);
-    delay(120);
-    stop();
-}
-
 void ZEN_MotorController::drive(int left, int right) {
-    analogWrite(AIN1, left > 0 ? left : 0);
-    analogWrite(AIN2, left < 0 ? -left : 0);
-    analogWrite(BIN1, right > 0 ? right : 0);
-    analogWrite(BIN2, right < 0 ? -right : 0);
+    left = constrain(left, -255, 255);
+    right = constrain(right, -255, 255);
+
+    ledcWrite(CH_A1, left > 0 ? left : 0);
+    ledcWrite(CH_A2, left < 0 ? -left : 0);
+    ledcWrite(CH_B1, right > 0 ? right : 0);
+    ledcWrite(CH_B2, right < 0 ? -right : 0);
 }
 
-void ZEN_MotorController::stop() {
-    analogWrite(AIN1, 0);
-    analogWrite(AIN2, 0);
-    analogWrite(BIN1, 0);
-    analogWrite(BIN2, 0);
+void ZEN_MotorController::stopAll() {
+    ledcWrite(CH_A1, 0);
+    ledcWrite(CH_A2, 0);
+    ledcWrite(CH_B1, 0);
+    ledcWrite(CH_B2, 0);
+}
+
+// ============ MANUAL CONTROL (Bluetooth / RC) ============
+
+void ZEN_MotorController::manualForward() {
+    ledcWrite(CH_A1, 120); ledcWrite(CH_A2, 0);
+    ledcWrite(CH_B1, 120); ledcWrite(CH_B2, 0);
+}
+
+void ZEN_MotorController::manualBack() {
+    ledcWrite(CH_A1, 0); ledcWrite(CH_A2, 120);
+    ledcWrite(CH_B1, 0); ledcWrite(CH_B2, 120);
+}
+
+void ZEN_MotorController::manualLeft() {
+    ledcWrite(CH_A1, 0); ledcWrite(CH_A2, 120);
+    ledcWrite(CH_B1, 120); ledcWrite(CH_B2, 0);
+}
+
+void ZEN_MotorController::manualRight() {
+    ledcWrite(CH_A1, 120); ledcWrite(CH_A2, 0);
+    ledcWrite(CH_B1, 0); ledcWrite(CH_B2, 120);
+}
+
+void ZEN_MotorController::manualStop() {
+    stopAll();
 }
